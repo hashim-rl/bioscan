@@ -42,7 +42,7 @@
 bioscan/
 ├── main.py                     # Application entry point, ScreenManager & Android lifecycle
 ├── buildozer.spec              # Android APK build specification
-├── requirements.txt            # Python development requirements
+├── requirements-desktop.txt    # Desktop Python development requirements
 ├── .github/
 │   └── workflows/
 │       └── build-apk.yml       # Cloud automated APK builder (GitHub Actions)
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS biometrics (
 ### Install Dependencies
 ```bash
 cd bioscan
-pip install kivy[base] opencv-python numpy pillow
+pip install -r requirements-desktop.txt
 ```
 
 ### Run Application
