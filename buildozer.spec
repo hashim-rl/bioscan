@@ -16,14 +16,14 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,spec
 
 # (list) List of directory to exclude
-source.exclude_dirs = tests, bin, .git, .github, .gemini
+source.exclude_dirs = tests, bin, .git, .github, .gemini, p4a-recipes
 
 # (str) Application versioning
 version = 1.0.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,opencv,numpy,pillow,charset-normalizer==2.1.1
+requirements = python3,kivy,opencv,numpy,pillow
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
@@ -57,6 +57,9 @@ android.aab = False
 
 # (bool) If True, skip attempting to build with pre-installed recipes
 p4a.branch = master
+
+# (str) The directory in which python-for-android should look for your own recipes
+p4a.local_recipes = ./p4a-recipes
 
 [buildozer]
 
