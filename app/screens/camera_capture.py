@@ -303,8 +303,11 @@ class CameraCaptureScreen(Screen):
     def _start_camera(self):
         """Initialize camera widget or fallback."""
         self._stop_camera()
+        generation = self.capture_generation
 
         def on_permission_granted(granted):
+            if generation != self.capture_generation:
+                return
             if self.manager and self.manager.current != self.name:
                 return
             if not granted:
@@ -316,7 +319,10 @@ class CameraCaptureScreen(Screen):
                 try:
                     from app.services.android_camera import AndroidCamera
                     category = self.category_queue[self.current_category_idx]
-                    self.native_camera = AndroidCamera(self._native_captured, self._on_cancel, self._camera_error)
+                    self.native_camera = AndroidCamera(
+                        lambda *args: self._native_captured(generation, *args),
+                        lambda: self._native_cancelled(generation),
+                        lambda message: self._native_error(generation, message))
                     self.native_camera.open(BIOMETRIC_LABELS[category], GUIDE_CONFIG[category])
                     self.camera_active = True
                 except Exception as exc:
@@ -468,7 +474,19 @@ class CameraCaptureScreen(Screen):
         self.lbl_status.text = "Camera unavailable. Tap capture to retry.\n" + message
         print('[BioScan Camera]', message)
 
-    def _native_captured(self, path, viewport, guide):
+    def _native_cancelled(self, generation):
+        if generation == self.capture_generation:
+            self._on_cancel()
+
+    def _native_error(self, generation, message):
+        if generation == self.capture_generation:
+            self._camera_error(message)
+
+    def _native_captured(self, generation, path, viewport, guide):
+        if generation != self.capture_generation:
+            if os.path.exists(path):
+                os.remove(path)
+            return
         self.native_camera = None
         self.camera_active = False
         self._process_still(None, None, path, viewport, guide)

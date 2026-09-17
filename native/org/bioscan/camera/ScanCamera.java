@@ -51,6 +51,7 @@ public final class ScanCamera implements LifecycleOwner, Application.ActivityLif
     private Preview preview;
     private ImageCapture capture;
     private boolean closed = false, busy = false;
+    private int focusGeneration = 0;
     private File pendingFile;
 
     public ScanCamera(Activity activity, Listener listener) {
@@ -138,6 +139,7 @@ public final class ScanCamera implements LifecycleOwner, Application.ActivityLif
     }
     private void focus(float x, float y, boolean takePhoto) {
         if (closed || camera == null) return;
+        final int request = ++focusGeneration;
         MeteringPoint point = previewView.getMeteringPointFactory().createPoint(x, y);
         FocusMeteringAction action = new FocusMeteringAction.Builder(point,
             FocusMeteringAction.FLAG_AF | FocusMeteringAction.FLAG_AE)
@@ -145,7 +147,7 @@ public final class ScanCamera implements LifecycleOwner, Application.ActivityLif
         status.setText("Focusing… hold steady");
         ListenableFuture<FocusMeteringResult> future = camera.getCameraControl().startFocusAndMetering(action);
         future.addListener(() -> {
-            if (closed) return;
+            if (closed || request != focusGeneration) return;
             try {
                 boolean sharp = future.get().isFocusSuccessful();
                 android.util.Log.i("BioScanCamera", "Focus success="+sharp);
