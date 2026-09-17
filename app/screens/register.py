@@ -7,7 +7,8 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.uix.checkbox import CheckBox
+from kivy.metrics import dp
+from kivy.clock import Clock
 from kivy.uix.widget import Widget
 from kivy.graphics import Color, Rectangle
 
@@ -28,40 +29,34 @@ from app.screens.widgets import (
 )
 
 
-class BiometricCheckItem(BoxLayout):
-    """Row displaying a checkbox and the biometric category label."""
-    def __init__(self, cat_id: str, label_text: str, **kwargs):
+class BiometricCheckItem(SecondaryButton):
+    """A complete 56dp touch target with an explicit selection state."""
+    def __init__(self, cat_id, label_text, **kwargs):
         super().__init__(**kwargs)
         self.cat_id = cat_id
-        self.orientation = "horizontal"
-        self.size_hint_y = None
-        self.height = "40dp"
-        self.spacing = "10dp"
+        self.label_text = label_text
+        self._checked = False
+        self.height = "56dp"
+        self.font_size = "14sp"
+        self.halign = "left"
+        self.padding = ("14dp", 0)
+        self.bind(size=lambda *a: setattr(self, 'text_size', (self.width-dp(28), None)))
+        self.bind(on_release=self._toggle)
+        self.is_checked = False
 
-        self.checkbox = CheckBox(
-            size_hint=(None, None),
-            size=("30dp", "30dp"),
-            color=(0.08, 0.40, 0.75, 1.0),
-        )
-        self.add_widget(self.checkbox)
-
-        self.label = Label(
-            text=label_text,
-            font_size="14sp",
-            color=COLOR_TEXT_PRIMARY,
-            halign="left",
-            valign="middle",
-        )
-        self.label.bind(size=lambda lbl, sz: setattr(lbl, "text_size", (sz[0], None)))
-        self.add_widget(self.label)
+    def _toggle(self, *args):
+        self.is_checked = not self.is_checked
 
     @property
-    def is_checked(self) -> bool:
-        return self.checkbox.active
+    def is_checked(self):
+        return self._checked
 
     @is_checked.setter
-    def is_checked(self, val: bool):
-        self.checkbox.active = val
+    def is_checked(self, value):
+        self._checked = bool(value)
+        self.text = ("[x]  " if value else "[  ]  ") + self.label_text
+        self.bg_color.rgba = (0.90, 0.95, 1, 1) if value else (1, 1, 1, 1)
+        self.color = COLOR_PRIMARY if value else COLOR_TEXT_PRIMARY
 
 
 class RegisterScreen(Screen):
@@ -98,11 +93,11 @@ class RegisterScreen(Screen):
 
         # Instruction subtitle
         sub_header = Label(
-            text="Enter details and choose 1 to 4 biometric categories to scan.",
+            text="Enter user details and select the biometric scans to register.",
             font_size="13sp",
             color=COLOR_TEXT_MUTED,
             size_hint_y=None,
-            height="24dp",
+            height="40dp",
             halign="left",
         )
         sub_header.bind(size=lambda lbl, sz: setattr(lbl, "text_size", sz))
@@ -113,7 +108,7 @@ class RegisterScreen(Screen):
         input_card.bind(minimum_height=input_card.setter("height"))
 
         lbl_name = Label(
-            text="Full Name *",
+            text="FULL NAME",
             font_size="13sp",
             bold=True,
             color=COLOR_TEXT_PRIMARY,
@@ -128,7 +123,7 @@ class RegisterScreen(Screen):
         input_card.add_widget(self.input_name)
 
         lbl_id = Label(
-            text="User ID *",
+            text="USER ID",
             font_size="13sp",
             bold=True,
             color=COLOR_TEXT_PRIMARY,
@@ -149,7 +144,7 @@ class RegisterScreen(Screen):
         cat_card.bind(minimum_height=cat_card.setter("height"))
 
         lbl_cat_title = Label(
-            text="Select Biometric Categories (1 - 4)",
+            text="SELECT BIOMETRICS",
             font_size="14sp",
             bold=True,
             color=COLOR_PRIMARY,
@@ -189,8 +184,15 @@ class RegisterScreen(Screen):
         btn_cancel.bind(on_release=self._go_home)
         content_box.add_widget(btn_cancel)
 
+        self.scroll = scroll
+        self.input_name.bind(focus=self._keep_visible)
+        self.input_user_id.bind(focus=self._keep_visible)
         scroll.add_widget(content_box)
         self.add_widget(scroll)
+
+    def _keep_visible(self, field, focused):
+        if focused:
+            Clock.schedule_once(lambda dt: self.scroll.scroll_to(field, padding=dp(20)), 0.35)
 
     def _update_bg(self, *args):
         self.bg_rect.pos = self.pos
@@ -244,6 +246,9 @@ class RegisterScreen(Screen):
                 self.lbl_feedback.text = f"Skipping registered: {', '.join(already_registered_cats)}"
         else:
             cats_to_capture = selected_cats
+
+        self.input_name.focus = False
+        self.input_user_id.focus = False
 
         # Prepare capture queue and pass to camera_capture screen
         cam_screen = self.manager.get_screen("camera_capture")

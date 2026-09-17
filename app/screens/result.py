@@ -144,9 +144,9 @@ class ResultScreen(Screen):
     def show_verification_result(self, success: bool, user_id: str = "", name: str = "", category: str = "", score: float = 0.0):
         """Configure result screen for verification."""
         if success:
-            self.lbl_outcome.text = "REGISTERED"
+            self.lbl_outcome.text = "POSSIBLE MATCH"
             self.lbl_outcome.color = COLOR_SUCCESS
-            self.lbl_subtitle.text = "Biometric match verified against local registry."
+            self.lbl_subtitle.text = "Experimental score • threshold is not calibrated."
             self.details_card.opacity = 1
             self.details_card.disabled = False
             self.lbl_name_row.value_label.text = name
@@ -158,11 +158,15 @@ class ResultScreen(Screen):
             self.btn_secondary.opacity = 0
             self.btn_secondary.disabled = True
         else:
-            self.lbl_outcome.text = "NOT REGISTERED"
+            self.lbl_outcome.text = "NO MATCH"
             self.lbl_outcome.color = COLOR_DANGER
-            self.lbl_subtitle.text = "No matching biometric registration was found."
-            self.details_card.opacity = 0
-            self.details_card.disabled = True
+            self.lbl_subtitle.text = "Experimental score • threshold is not calibrated."
+            self.details_card.opacity = 1
+            self.details_card.disabled = False
+            self.lbl_name_row.value_label.text = "—"
+            self.lbl_id_row.value_label.text = "—"
+            self.lbl_bio_row.value_label.text = BIOMETRIC_LABELS.get(category, category)
+            self.lbl_score_row.value_label.text = f"{score:.1f}%"
 
             self.btn_primary.text = "TRY AGAIN"
             self.btn_secondary.text = "HOME"

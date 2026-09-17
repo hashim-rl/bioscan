@@ -5,6 +5,8 @@ snapshot capture, and post-capture Original vs Enhanced inspection.
 """
 
 import io
+import os
+from threading import Thread
 import cv2
 import numpy as np
 from kivy.uix.screenmanager import Screen
@@ -14,6 +16,7 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.clock import Clock
+from kivy.metrics import dp
 from kivy.graphics import Color, Rectangle, Line
 from kivy.core.image import Image as CoreImage
 
@@ -121,6 +124,9 @@ class CameraCaptureScreen(Screen):
         self.kivy_camera = None
         self.camera_active = False
         self.simulated_cam_event = None
+        self.native_camera = None
+        self.capture_generation = 0
+        self.processing = False
 
         self._build_ui()
 
@@ -186,13 +192,20 @@ class CameraCaptureScreen(Screen):
 
         main_layout.add_widget(self.viewport)
 
+        self.btn_view = SecondaryButton(text="Showing Original • Show Enhanced")
+        self.btn_view.bind(on_release=self._toggle_review)
+        self.btn_view.opacity = 0
+        self.btn_view.height = 0
+        self.btn_view.disabled = True
+        main_layout.add_widget(self.btn_view)
+
         # Quality warning / Status message
         self.lbl_status = Label(
             text="",
             font_size="13sp",
             color=COLOR_DANGER,
             size_hint_y=None,
-            height="24dp",
+            height="68dp",
             halign="center",
         )
         self.lbl_status.bind(size=lambda lbl, sz: setattr(lbl, "text_size", sz))
@@ -232,6 +245,7 @@ class CameraCaptureScreen(Screen):
 
         # Initially hide review controls
         self.review_controls.opacity = 0
+        self.review_controls.height = 0
         self.review_controls.disabled = True
         main_layout.add_widget(self.review_controls)
 
@@ -291,9 +305,22 @@ class CameraCaptureScreen(Screen):
         self._stop_camera()
 
         def on_permission_granted(granted):
+            if self.manager and self.manager.current != self.name:
+                return
             if not granted:
                 self.lbl_status.text = "Camera permission denied."
-                self._start_simulated_feed()
+                self.btn_capture.disabled = True
+                return
+
+            if is_android():
+                try:
+                    from app.services.android_camera import AndroidCamera
+                    category = self.category_queue[self.current_category_idx]
+                    self.native_camera = AndroidCamera(self._native_captured, self._on_cancel, self._camera_error)
+                    self.native_camera.open(BIOMETRIC_LABELS[category], GUIDE_CONFIG[category])
+                    self.camera_active = True
+                except Exception as exc:
+                    self._camera_error(str(exc))
                 return
 
             try:
@@ -335,6 +362,11 @@ class CameraCaptureScreen(Screen):
         self.lbl_status.text = "Simulated feed active (desktop dev mode)"
 
     def _stop_camera(self):
+        self.capture_generation += 1
+        self.processing = False
+        if self.native_camera:
+            self.native_camera.close()
+            self.native_camera = None
         if self.simulated_cam_event:
             self.simulated_cam_event.cancel()
             self.simulated_cam_event = None
@@ -374,8 +406,14 @@ class CameraCaptureScreen(Screen):
         self.preview_image.opacity = 0
         self.live_controls.opacity = 1
         self.live_controls.disabled = False
+        self.live_controls.height = dp(50)
+        self.btn_capture.disabled = False
         self.review_controls.opacity = 0
+        self.review_controls.height = 0
         self.review_controls.disabled = True
+        self.btn_view.opacity = 0
+        self.btn_view.height = 0
+        self.btn_view.disabled = True
         self.lbl_status.text = ""
 
     def _show_review_state(self, preview_texture):
@@ -385,8 +423,15 @@ class CameraCaptureScreen(Screen):
         self.overlay_widget.opacity = 0
         self.live_controls.opacity = 0
         self.live_controls.disabled = True
+        self.live_controls.height = 0
         self.review_controls.opacity = 1
+        self.review_controls.height = dp(50)
         self.review_controls.disabled = False
+        self.btn_view.opacity = 1
+        self.btn_view.height = dp(48)
+        self.btn_view.disabled = False
+        self.lbl_title.text = "Review Scan"
+        self.lbl_instructions.text = BIOMETRIC_LABELS[self.category_queue[self.current_category_idx]]
 
     def _create_side_by_side_preview(self, orig_roi: np.ndarray, enhanced: np.ndarray) -> np.ndarray:
         """Creates a side-by-side comparison image of Original vs Enhanced for review."""
@@ -404,39 +449,98 @@ class CameraCaptureScreen(Screen):
         return np.hstack((orig_resized, divider, enh_resized))
 
     def _on_capture(self, *args):
+        if self.processing:
+            return
+        if is_android():
+            self._start_camera()
+            return
         frame = self._get_current_frame()
-        self.captured_raw_frame = frame
-        current_cat = self.category_queue[self.current_category_idx]
+        from app.services.camera_geometry import map_guide_to_image
+        cfg = GUIDE_CONFIG[self.category_queue[self.current_category_idx]]
+        vw, vh = self.viewport.size
+        w, h = vw * cfg['width_ratio'], vh * cfg['height_ratio']
+        bounds = map_guide_to_image((frame.shape[1], frame.shape[0]), (vw, vh), ((vw-w)/2, (vh-h)/2, w, h))
+        self._process_still(frame, bounds)
 
-        try:
-            from app.services.image_processor import preprocess_image
-            orig_roi, enhanced, quality = preprocess_image(frame, current_cat)
-            self.current_roi = orig_roi
-            self.current_enhanced = enhanced
-            self.current_quality = quality
+    def _camera_error(self, message):
+        self.native_camera = None
+        self.camera_active = False
+        self.lbl_status.text = "Camera unavailable. Tap capture to retry.\n" + message
+        print('[BioScan Camera]', message)
 
-            comparison = self._create_side_by_side_preview(orig_roi, enhanced)
-            buf = cv2.imencode('.png', comparison)[1].tobytes()
-            core_img = CoreImage(io.BytesIO(buf), ext='png')
-            self._show_review_state(core_img.texture)
+    def _native_captured(self, path, viewport, guide):
+        self.native_camera = None
+        self.camera_active = False
+        self._process_still(None, None, path, viewport, guide)
 
-            if not quality["passed"]:
-                self.lbl_status.text = f"Quality Warning: {quality['reason']}"
-                self.btn_accept.disabled = True
-            else:
-                self.lbl_status.text = (
-                    f"DIP Enhanced. Sharpness: {quality['blur_score']:.0f} | Brightness: {quality['mean_brightness']:.0f}"
-                )
-                self.btn_accept.disabled = False
-        except Exception as e:
-            print(f"[BioScan Capture Error] {e}")
-            self.lbl_status.text = f"Processing error: {e}"
-            self._show_live_state()
+    def _process_still(self, frame, bounds, path=None, viewport=None, guide=None):
+        self.processing = True
+        self.btn_capture.disabled = True
+        self.lbl_status.text = "Checking sharpness and enhancing scan…"
+        generation = self.capture_generation
+        category = self.category_queue[self.current_category_idx]
+
+        def work():
+            try:
+                nonlocal frame, bounds
+                if path:
+                    from PIL import Image as PILImage, ImageOps
+                    from app.services.camera_geometry import map_guide_to_image
+                    with PILImage.open(path) as source:
+                        upright = ImageOps.exif_transpose(source).convert('RGB')
+                        frame = cv2.cvtColor(np.asarray(upright), cv2.COLOR_RGB2BGR)
+                    bounds = map_guide_to_image((frame.shape[1], frame.shape[0]), viewport, guide)
+                from app.services.image_processor import preprocess_image
+                result = preprocess_image(frame, category, roi_bounds=bounds)
+                print(f'[BioScan Capture] size={frame.shape} roi={bounds} quality={result[2]}')
+                Clock.schedule_once(lambda dt: self._processed(generation, result), 0)
+            except Exception as exc:
+                message = str(exc)
+                Clock.schedule_once(lambda dt: self._processing_failed(generation, message), 0)
+            finally:
+                if path and os.path.exists(path):
+                    os.remove(path)
+        Thread(target=work, daemon=True).start()
+
+    def _processing_failed(self, generation, message):
+        if generation != self.capture_generation:
+            return
+        self.processing = False
+        self.btn_capture.disabled = False
+        self.lbl_status.text = 'Processing failed: ' + message
+
+    def _processed(self, generation, result):
+        if generation != self.capture_generation:
+            return
+        self.processing = False
+        self.current_roi, self.current_enhanced, self.current_quality = result
+        self.review_enhanced = False
+        self._render_review()
+        quality = self.current_quality
+        self.btn_accept.disabled = not quality['passed']
+        self.lbl_status.color = COLOR_TEXT_PRIMARY if quality['passed'] else COLOR_DANGER
+        self.lbl_status.text = (f"Sharpness {quality['blur_score']:.1f} • Lighting {quality['mean_brightness']:.0f}/255\n"
+                                + ("Ready to accept" if quality['passed'] else quality['reason']))
+
+    def _render_review(self):
+        frame = self.current_enhanced if self.review_enhanced else self.current_roi
+        buf = cv2.imencode('.png', frame)[1].tobytes()
+        self._show_review_state(CoreImage(io.BytesIO(buf), ext='png').texture)
+        self.btn_view.text = ('Showing Enhanced • Show Original' if self.review_enhanced
+                              else 'Showing Original • Show Enhanced')
+
+    def _toggle_review(self, *args):
+        self.review_enhanced = not self.review_enhanced
+        self._render_review()
 
     def _on_retake(self, *args):
         self._show_live_state()
+        self._update_step_labels()
+        self._start_camera()
 
     def _on_accept(self, *args):
+        if not getattr(self, 'current_quality', {}).get('passed'):
+            return
         if not hasattr(self, "current_enhanced") or self.current_enhanced is None:
             self._show_live_state()
             return
@@ -467,6 +571,7 @@ class CameraCaptureScreen(Screen):
             # Advance to next category in registration queue
             self._show_live_state()
             self._update_step_labels()
+            self._start_camera()
         else:
             # All captures completed
             self._finish_flow()

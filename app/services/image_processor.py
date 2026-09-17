@@ -108,7 +108,7 @@ def check_image_quality(image: np.ndarray) -> Dict[str, Any]:
     if blur_score < BLUR_THRESHOLD:
         return {
             "passed": False,
-            "reason": f"Image is blurry ({blur_score:.1f} < {BLUR_THRESHOLD:.1f}). Hold phone steady.",
+            "reason": "Image is too blurry. Tap to focus, adjust distance and hold steady.",
             "blur_score": blur_score,
             "mean_brightness": mean_brightness,
         }
@@ -125,6 +125,7 @@ def preprocess_image(
     raw_frame: np.ndarray,
     category: str,
     target_size: Tuple[int, int] = (ROI_WIDTH, ROI_HEIGHT),
+    roi_bounds=None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Executes the complete Digital Image Processing (DIP) enhancement pipeline.
@@ -151,7 +152,16 @@ def preprocess_image(
         raise ValueError("Cannot preprocess empty or None image frame.")
 
     # 1. Crop to ROI
-    roi_bgr = crop_roi_by_category(raw_frame, category)
+    if roi_bounds is None:
+        roi_bgr = crop_roi_by_category(raw_frame, category)
+    else:
+        x1, y1, x2, y2 = roi_bounds
+        if not (0 <= x1 < x2 <= raw_frame.shape[1] and 0 <= y1 < y2 <= raw_frame.shape[0]):
+            raise ValueError("Invalid mapped ROI")
+        roi_bgr = raw_frame[y1:y2, x1:x2]
+        # Fit inside the normal processing size without distorting fingers.
+        scale = min(target_size[0] / roi_bgr.shape[1], target_size[1] / roi_bgr.shape[0])
+        target_size = (max(1, round(roi_bgr.shape[1]*scale)), max(1, round(roi_bgr.shape[0]*scale)))
 
     # 2. Resize to standard dimensions
     resized_bgr = cv2.resize(roi_bgr, target_size, interpolation=cv2.INTER_AREA)

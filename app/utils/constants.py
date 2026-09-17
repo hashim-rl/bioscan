@@ -2,6 +2,7 @@
 BioScan Application Constants
 Defines biometric categories, default thresholds, color palettes, and UI metrics.
 """
+import os
 
 # Biometric Category Identifiers
 BIOMETRIC_LEFT_FINGERS = "LEFT_FINGERS"
@@ -49,7 +50,7 @@ ROI_HEIGHT = 640
 
 # DIP Quality Control Thresholds (configurable constants)
 # Blur threshold based on Laplacian variance
-BLUR_THRESHOLD = 80.0
+BLUR_THRESHOLD = float(os.environ.get('BIOSCAN_BLUR_THRESHOLD', '80.0'))
 
 # Brightness limits (average intensity [0-255])
 MIN_BRIGHTNESS = 40.0
@@ -63,7 +64,7 @@ HAMMING_GOOD_MATCH_MAX_DIST = 50.0
 
 # Initial matching threshold - to be calibrated after real Android tests
 # Score is percentage of good matches relative to total descriptors
-DEFAULT_MATCH_THRESHOLD = 20.0
+DEFAULT_MATCH_THRESHOLD = float(os.environ.get('BIOSCAN_MATCH_THRESHOLD', '20.0'))
 
 # Professional Academic Color Palette (RGBA for Kivy, [0.0 - 1.0])
 COLOR_BG = (0.97, 0.98, 0.98, 1.0)          # Clean off-white #F8F9FA

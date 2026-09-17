@@ -8,6 +8,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.graphics import Color, RoundedRectangle, Line
+from kivy.metrics import dp
 from app.utils.constants import (
     COLOR_PRIMARY,
     COLOR_PRIMARY_DARK,
@@ -40,6 +41,10 @@ class PrimaryButton(Button):
             self.rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[8])
 
         self.bind(pos=self._update_rect, size=self._update_rect)
+        self.bind(disabled=self._disabled_style)
+
+    def _disabled_style(self, *args):
+        self.canvas_color.rgba = (0.65, 0.68, 0.72, 1) if self.disabled else self.normal_color
 
     def _update_rect(self, *args):
         self.rect.pos = self.pos
@@ -67,7 +72,7 @@ class SecondaryButton(Button):
         self.font_size = "14sp"
         self.bold = True
         self.size_hint_y = None
-        self.height = "44dp"
+        self.height = "48dp"
 
         with self.canvas.before:
             self.bg_color = Color(1, 1, 1, 1)
@@ -95,25 +100,32 @@ class StyledTextInput(TextInput):
         super().__init__(**kwargs)
         self.multiline = False
         self.size_hint_y = None
-        self.height = "44dp"
+        self.height = "56dp"
         self.font_size = "15sp"
         self.padding = ["12dp", "12dp", "12dp", "12dp"]
         self.background_color = (0, 0, 0, 0)
         self.foreground_color = COLOR_TEXT_PRIMARY
         self.cursor_color = COLOR_PRIMARY
-
-        with self.canvas.before:
-            Color(1, 1, 1, 1)
-            self.rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[6])
+        self.hint_text_color = COLOR_TEXT_MUTED
+        self.background_normal = ""
+        self.background_active = ""
+        self.background_color = (1, 1, 1, 1)
+        # Do not append colors to canvas.before: TextInput uses its final Color
+        # to render the glyphs. A border there turns active text pale grey.
+        with self.canvas.after:
             self.line_color = Color(*COLOR_BORDER)
             self.line = Line(rounded_rectangle=[self.x, self.y, self.width, self.height, 6], width=1.1)
 
         self.bind(pos=self._update_rect, size=self._update_rect)
+        self.bind(focus=self._focus_style, line_height=self._update_rect)
+
+    def _focus_style(self, *args):
+        self.line_color.rgba = COLOR_PRIMARY if self.focus else COLOR_BORDER
 
     def _update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
         self.line.rounded_rectangle = [self.x, self.y, self.width, self.height, 6]
+        pad = max(dp(8), (self.height - self.line_height) / 2)
+        self.padding = [dp(12), pad, dp(12), pad]
 
 
 class CardBox(BoxLayout):

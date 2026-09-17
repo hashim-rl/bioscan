@@ -28,6 +28,7 @@ class BioScanApp(App):
     title = "BioScan"
 
     def build(self):
+        Window.softinput_mode = 'below_target'
         # Create ScreenManager with smooth cross-fade transition
         sm = ScreenManager(transition=FadeTransition(duration=0.15))
 
@@ -46,6 +47,15 @@ class BioScanApp(App):
         from app.services.database import init_database
         init_database()
         print("[BioScan] Local SQLite database initialized successfully.")
+
+    def on_pause(self):
+        # Native camera observes Android activity lifecycle and releases the
+        # session while backgrounded. Keep the registration queue alive.
+        return True
+
+    def on_stop(self):
+        if self.root:
+            self.root.get_screen('camera_capture')._stop_camera()
 
     def _on_keyboard_handler(self, window, key, *args):
         # 27 is Android back button and Escape key on desktop

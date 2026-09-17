@@ -16,14 +16,19 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,spec
 
 # (list) List of directory to exclude
-source.exclude_dirs = tests, bin, .git, .github, .gemini, p4a-recipes
+source.exclude_dirs = tests, bin, .git, .github, .gemini, p4a-recipes, docs, native
+source.exclude_patterns = bioscan_*.png,failure-frame.jpg,real_device_failure.mp4
 
 # (str) Application versioning
-version = 1.0.0
+version = 1.1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 requirements = python3,kivy,opencv,numpy,pillow
+
+android.enable_androidx = True
+android.add_src = native
+android.gradle_dependencies = androidx.camera:camera-core:1.3.4,androidx.camera:camera-camera2:1.3.4,androidx.camera:camera-lifecycle:1.3.4,androidx.camera:camera-view:1.3.4
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
